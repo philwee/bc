@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Barcode Scanner</title>
+    <style>
+        /* General Reset */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            background-color: #f9f9f9;
+            color: #333;
+            padding: 20px;
+        }
+
+        h1 { color: #007bff; margin-bottom: 10px; }
+
+        #scanner-container {
+            width: 100%;
+            max-width: 640px;
+            height: 480px;
+            margin: 20px auto;
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #output table {
+            margin: 20px auto;
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 640px;
+        }
+
+        table, th, td { border: 1px solid #ddd; }
+
+        th, td { padding: 10px; text-align: center; }
+
+        th { background-color: #007bff; color: white; }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 1em;
+            color: white;
+            background-color: #28a745;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover { background-color: #218838; }
+
+        .clear-btn { background-color: #dc3545; }
+        .clear-btn:hover { background-color: #c82333; }
+
+        #manual-input { margin-top: 20px; }
+
+        .flash {
+            animation: flash 0.5s ease;
+        }
+
+        @keyframes flash {
+            0% { background-color: #28a745; }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Enhanced Barcode Scanner</h1>
+    <p>Scan barcodes or manually enter them. Data is saved locally and can be downloaded as CSV.</p>
+
+    <!-- Scanner Container -->
+    <div id="scanner-container"></div>
+
+    <!-- Manual Input -->
+    <div id="manual-input">
+        <input type="text" id="manual-barcode" placeholder="Enter barcode" />
+        <button id="add-manual-btn">Add Manually</button>
+        <label>Scan Delay (seconds): <input type="number" id="delay-input" value="2" min="1" style="width: 50px;" /></label>
+    </div>
+
+    <!-- Output Table -->
+    <div id="output">
+        <h2>Scanned Data</h2>
+        <table id="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Barcode Data</th>
+                    <th>Format</th>
+                    <th>Input Type</th>
+                    <th>Date & Time</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Buttons -->
+    <div>
+        <button id="download-btn">Download CSV</button>
+        <button id="clear-btn" class="clear-btn">Clear Data</button>
+    </div>
+
+    <!-- QuaggaJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <script>
+        const tableBody = document.querySelector("#data-table tbody");
+        const downloadBtn = document.getElementById("download-btn");
+        const clearBtn = document.getElementById("clear-btn");
+        const manualInput = document.getElementById("manual-barcode");
+        const addManualBtn = document.getElementById("add-manual-btn");
+        const delayInput = document.getElementById("delay-input");
+        const scannerContainer = document.getElementById("scanner-container");
+
+        let scannedData = JSON.parse(localStorage.getItem("scannedData")) || [];
+        let scanCount = scannedData.length;
+        let lastScanTime = 0;
+
+        // Function to load data
+        function loadData() {
+            tableBody.innerHTML = "";
+            scannedData.forEach((item, index) => addRowToTable(item, index + 1));
+        }
+
+        function saveData() {
+            localStorage.setItem("scannedData", JSON.stringify(scannedData));
+        }
+
+        function addRowToTable(item, index) {
+            const row = `<tr>
+                <td>${index}</td>
+                <td>${item.data}</td>
+                <td>${item.format || '-'}</td>
+                <td>${item.type}</td>
+                <td>${item.time}</td>
+            </tr>`;
+            tableBody.insertAdjacentHTML("beforeend", row);
+        }
+
+        function addBarcode(data, format, type) {
+            const now = new Date();
+            const timestamp = now.toLocaleString();
+
+            const newItem = {
+                data: data,
+                format: format || '-',
+                type: type,
+                time: timestamp
+            };
+
+            scannedData.push(newItem);
+            scanCount++;
+            addRowToTable(newItem, scanCount);
+            saveData();
+        }
+
+        // Flash Visual Indicator
+        function flashIndicator() {
+            scannerContainer.classList.add("flash");
+            setTimeout(() => scannerContainer.classList.remove("flash"), 500);
+        }
+
+        // Initialize QuaggaJS
+        Quagga.init({
+            inputStream: {
+                type: "LiveStream",
+                target: scannerContainer,
+                constraints: { width: 640, height: 480, facingMode: "environment" }
+            },
+            decoder: { readers: ["code_128_reader", "ean_reader", "upc_reader", "code_39_reader"] }
+        }, (err) => {
+            if (err) console.error(err);
+            else Quagga.start();
+        });
+
+        Quagga.onDetected((data) => {
+            const now = Date.now();
+            const delay = parseInt(delayInput.value) * 1000;
+
+            if (now - lastScanTime < delay) return; // Skip if delay is not met
+
+            const barcode = data.codeResult.code;
+            const format = data.codeResult.format;
+
+            if (!scannedData.some(item => item.data === barcode)) {
+                addBarcode(barcode, format, "Scanned");
+                flashIndicator();
+            }
+            lastScanTime = now;
+        });
+
+        // Manual Input
+        addManualBtn.addEventListener("click", () => {
+            const barcode = manualInput.value.trim();
+            if (barcode) {
+                addBarcode(barcode, "-", "Manual");
+                manualInput.value = "";
+            }
+        });
+
+        // Download as CSV
+        downloadBtn.addEventListener("click", () => {
+            let csv = "data:text/csv;charset=utf-8,No,Barcode Data,Format,Input Type,Date & Time\n";
+            scannedData.forEach((item, index) => {
+                csv += `${index + 1},${item.data},${item.format},${item.type},${item.time}\n`;
+            });
+            const encodedUri = encodeURI(csv);
+            const link = document.createElement("a");
+            link.href = encodedUri;
+            link.download = "scanned_data.csv";
+            link.click();
+        });
+
+        // Clear Data
+        clearBtn.addEventListener("click", () => {
+            if (confirm("Clear all data?")) {
+                scannedData = [];
+                scanCount = 0;
+                tableBody.innerHTML = "";
+                saveData();
+            }
+        });
+
+        loadData();
+    </script>
+</body>
+</html>
+    
